@@ -1,21 +1,21 @@
 ## Emotion Detection with Super Resolution
-    Emotion detection by using MediaPipe Face Mesh indexes and KNN classifier for identifying 6+1 Ekman emotions.
-    (anger, discust, fear, happy, sad, supprise + contempt)
+Emotion detection by using MediaPipe Face Mesh indexes and KNN classifier for identifying 6+1 Ekman emotions.
+(anger, discust, fear, happy, sad, supprise + contempt)
 
-    Detailed project description can be found:
-    [HERE](https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/topic_presentation.pdf)
+Detailed project description can be found:
+[HERE](https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/topic_presentation.pdf)
 
-    <a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/showcase.png">
-    <div align="center">
-        <img src="presentations/showcase.png" width="80%" height="50%"/>
-    </div>
-    </a>
-    
-    <a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/showcase2.png">
-    <div align="center">
-        <img src="presentations/showcase2.png" width="80%" height="50%"/>
-    </div>
-    </a>
+<a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/showcase.png">
+<div align="center">
+    <img src="presentations/showcase.png" width="80%" height="50%"/>
+</div>
+</a>
+
+<a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/showcase2.png">
+<div align="center">
+    <img src="presentations/showcase2.png" width="80%" height="50%"/>
+</div>
+</a>
 
 #### Configuration
     For an image+emotion label dataset:
@@ -96,3 +96,4 @@
 ### License
 
 - For academic and non-commercial use only.
+- Contact: keragon2@gmail.com
