@@ -3,7 +3,7 @@ Emotion detection by using MediaPipe Face Mesh indexes and KNN classifier for id
 (anger, discust, fear, happy, sad, supprise + contempt)
 
 Detailed project description can be found:
-[HERE](https://github.com/Kerachi/SuperResolution-EmotionDetection/blob/master/presentations/topic_presentation.pdf)
+[Here](https://github.com/Kerachi/SuperResolution-EmotionDetection/blob/master/presentations/topic_presentation.pdf)
 
 <a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/blob/master/presentations/showcase.png">
 <div align="center">
@@ -62,7 +62,7 @@ Detailed project description can be found:
     
 Your directory structure should look like this:
 ```
-srgan/
+emotion_detection_with_sr/
     └── config.py
     └── srgan.py
     └── train.py
@@ -91,8 +91,8 @@ srgan/
             RAM: 16 GB
 
 
-    Used sr repository:
-    [SRGAN](https://github.com/tensorlayer/srgan)
+Used sr repository:
+[srgan](https://github.com/tensorlayer/srgan)
 
 ### License
 
