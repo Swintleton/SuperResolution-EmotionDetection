@@ -1,106 +1,50 @@
 import os
-os.environ['TL_BACKEND'] = 'tensorflow' # Just modify this line, easily change to any framework! PyTorch will coming soon!
-# os.environ['TL_BACKEND'] = 'mindspore'
-# os.environ['TL_BACKEND'] = 'paddle'
-import time
+os.environ['TL_BACKEND'] = 'tensorflow'
+
 import numpy as np
 import tensorlayerx as tlx
-from tensorlayerx.dataflow import Dataset, DataLoader
 from srgan import SRGAN_g, SRGAN_d
 from config import config
-from tensorlayerx.vision.transforms import Compose, RandomCrop, Normalize, RandomFlipHorizontal, Resize
 import vgg
-from tensorlayerx.model import TrainOneStep
-from tensorlayerx.nn import Module
 import cv2
+
+import mediapipe as mp
+mp_face_detection = mp.solutions.face_detection
+mp_drawing = mp.solutions.drawing_utils
+mp_drawing_styles = mp.solutions.drawing_styles
+mp_face_mesh = mp.solutions.face_mesh
+
+import dlib
+from PIL import Image
+from skimage import io
+
+import csv
+from knn_train import KNN
+emotions = ["", "anger", "contempt", "discust", "fear", "happy", "sad", "supprise"]
+
+# Read filenames from a given directory
+img_base_path = 'datasets/CK+/'
+img_path = img_base_path + 'cohn-kanade-images/*/*/*.png'
+emotion_path = img_base_path + 'Emotion/*/*/*.txt'
+import glob
+fileNames = glob.glob(img_path)
+emotionNames = glob.glob(emotion_path)
 
 ###====================== HYPER-PARAMETERS ===========================###
 batch_size = 8
 n_epoch_init = config.TRAIN.n_epoch_init
 n_epoch = config.TRAIN.n_epoch
 # create folders to save result images and trained models
-save_dir = "samples"
-tlx.files.exists_or_mkdir(save_dir)
+save_dir = "upscaled"
 checkpoint_dir = "models"
+landmarkFilePath = "dataset_results/landmarks.txt"
+landmarkFilePathWithoutSR = "dataset_results/landmarks_without_sr.txt"
+predictedEmotionFilePath = "dataset_results/predictedEmotions.txt"
+predictedEmotionFilePathWithoutSR = "dataset_results/predictedEmotions_without_sr.txt"
+predictedEmotionFilePathCustom = "dataset_results/predictedEmotions_custom.txt"
+tlx.files.exists_or_mkdir(save_dir)
 tlx.files.exists_or_mkdir(checkpoint_dir)
-
-hr_transform = Compose([
-    RandomCrop(size=(384, 384)),
-    RandomFlipHorizontal(),
-])
-nor = Normalize(mean=(127.5), std=(127.5), data_format='HWC')
-lr_transform = Resize(size=(96, 96))
-
-
-class TrainData(Dataset):
-
-    def __init__(self, hr_trans=hr_transform, lr_trans=lr_transform):
-        self.train_hr_imgs = tlx.vision.load_images(path=config.TRAIN.hr_img_path)
-        self.hr_trans = hr_trans
-        self.lr_trans = lr_trans
-
-    def __getitem__(self, index):
-        img = self.train_hr_imgs[index]
-        hr_patch = self.hr_trans(img)
-        lr_patch = self.lr_trans(hr_patch)
-        return nor(lr_patch), nor(hr_patch)
-
-    def __len__(self):
-        return len(self.train_hr_imgs)
-
-
-class WithLoss_init(Module):
-    def __init__(self, G_net, loss_fn):
-        super(WithLoss_init, self).__init__()
-        self.net = G_net
-        self.loss_fn = loss_fn
-
-    def forward(self, lr, hr):
-        out = self.net(lr)
-        loss = self.loss_fn(out, hr)
-        return loss
-
-
-class WithLoss_D(Module):
-    def __init__(self, D_net, G_net, loss_fn):
-        super(WithLoss_D, self).__init__()
-        self.D_net = D_net
-        self.G_net = G_net
-        self.loss_fn = loss_fn
-
-    def forward(self, lr, hr):
-        fake_patchs = self.G_net(lr)
-        logits_fake = self.D_net(fake_patchs)
-        logits_real = self.D_net(hr)
-        d_loss1 = self.loss_fn(logits_real, tlx.ones_like(logits_real))
-        d_loss1 = tlx.ops.reduce_mean(d_loss1)
-        d_loss2 = self.loss_fn(logits_fake, tlx.zeros_like(logits_fake))
-        d_loss2 = tlx.ops.reduce_mean(d_loss2)
-        d_loss = d_loss1 + d_loss2
-        return d_loss
-
-
-class WithLoss_G(Module):
-    def __init__(self, D_net, G_net, vgg, loss_fn1, loss_fn2):
-        super(WithLoss_G, self).__init__()
-        self.D_net = D_net
-        self.G_net = G_net
-        self.vgg = vgg
-        self.loss_fn1 = loss_fn1
-        self.loss_fn2 = loss_fn2
-
-    def forward(self, lr, hr):
-        fake_patchs = self.G_net(lr)
-        logits_fake = self.D_net(fake_patchs)
-        feature_fake = self.vgg((fake_patchs + 1) / 2.)
-        feature_real = self.vgg((hr + 1) / 2.)
-        g_gan_loss = 1e-3 * self.loss_fn1(logits_fake, tlx.ones_like(logits_fake))
-        g_gan_loss = tlx.ops.reduce_mean(g_gan_loss)
-        mse_loss = self.loss_fn2(fake_patchs, hr)
-        vgg_loss = 2e-6 * self.loss_fn2(feature_fake, feature_real)
-        g_loss = mse_loss + vgg_loss + g_gan_loss
-        return g_loss
-
+tlx.files.exists_or_mkdir("dataset_results")
 
 G = SRGAN_g()
 D = SRGAN_d()
@@ -111,69 +55,21 @@ VGG = vgg.VGG19(pretrained=False, end_with='pool4', mode='dynamic')
 G.init_build(tlx.nn.Input(shape=(8, 96, 96, 3)))
 D.init_build(tlx.nn.Input(shape=(8, 384, 384, 3)))
 
+landmark_ids = [
+    0, 4, 17, 46, 48, 50, 61, 105, 107, 122,
+    130, 133, 145, 159, 206, 276, 280, 289, 292, 334,
+    336, 351, 359, 362, 374, 386, 426,
+]
 
-def train():
-    G.set_train()
-    D.set_train()
-    VGG.set_eval()
-    train_ds = TrainData()
-    train_ds_img_nums = len(train_ds)
-    train_ds = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True)
-
-    lr_v = tlx.optimizers.lr.StepDecay(learning_rate=0.05, step_size=1000, gamma=0.1, last_epoch=-1, verbose=True)
-    g_optimizer_init = tlx.optimizers.Momentum(lr_v, 0.9)
-    g_optimizer = tlx.optimizers.Momentum(lr_v, 0.9)
-    d_optimizer = tlx.optimizers.Momentum(lr_v, 0.9)
-    g_weights = G.trainable_weights
-    d_weights = D.trainable_weights
-    net_with_loss_init = WithLoss_init(G, loss_fn=tlx.losses.mean_squared_error)
-    net_with_loss_D = WithLoss_D(D_net=D, G_net=G, loss_fn=tlx.losses.sigmoid_cross_entropy)
-    net_with_loss_G = WithLoss_G(D_net=D, G_net=G, vgg=VGG, loss_fn1=tlx.losses.sigmoid_cross_entropy,
-                                 loss_fn2=tlx.losses.mean_squared_error)
-
-    trainforinit = TrainOneStep(net_with_loss_init, optimizer=g_optimizer_init, train_weights=g_weights)
-    trainforG = TrainOneStep(net_with_loss_G, optimizer=g_optimizer, train_weights=g_weights)
-    trainforD = TrainOneStep(net_with_loss_D, optimizer=d_optimizer, train_weights=d_weights)
-
-    # initialize learning (G)
-    n_step_epoch = round(train_ds_img_nums // batch_size)
-    for epoch in range(n_epoch_init):
-        for step, (lr_patch, hr_patch) in enumerate(train_ds):
-            step_time = time.time()
-            loss = trainforinit(lr_patch, hr_patch)
-            print("Epoch: [{}/{}] step: [{}/{}] time: {:.3f}s, mse: {:.3f} ".format(
-                epoch, n_epoch_init, step, n_step_epoch, time.time() - step_time, float(loss)))
-
-    # adversarial learning (G, D)
-    n_step_epoch = round(train_ds_img_nums // batch_size)
-    for epoch in range(n_epoch):
-        for step, (lr_patch, hr_patch) in enumerate(train_ds):
-            step_time = time.time()
-            loss_g = trainforG(lr_patch, hr_patch)
-            loss_d = trainforD(lr_patch, hr_patch)
-            print(
-                "Epoch: [{}/{}] step: [{}/{}] time: {:.3f}s, g_loss:{:.3f}, d_loss: {:.3f}".format(
-                    epoch, n_epoch, step, n_step_epoch, time.time() - step_time, float(loss_g), float(loss_d)))
-        # dynamic learning rate update
-        lr_v.step()
-
-        if (epoch != 0) and (epoch % 10 == 0):
-            G.save_weights(os.path.join(checkpoint_dir, 'g.npz'), format='npz_dict')
-            D.save_weights(os.path.join(checkpoint_dir, 'd.npz'), format='npz_dict')
-
-def evaluate():
-    ###====================== PRE-LOAD DATA ===========================###
-    valid_hr_imgs = tlx.vision.load_images(path=config.VALID.hr_img_path )
+def sr_upscale(image, saveImage=False):
     ###========================LOAD WEIGHTS ============================###
     G.load_weights(os.path.join(checkpoint_dir, 'g.npz'), format='npz_dict')
     G.set_eval()
-    imid = 0  # 0: 企鹅  81: 蝴蝶 53: 鸟  64: 古堡
-    valid_hr_img = valid_hr_imgs[imid]
-    valid_lr_img = np.asarray(valid_hr_img)
-    hr_size1 = [valid_lr_img.shape[0], valid_lr_img.shape[1]]
-    valid_lr_img = cv2.resize(valid_lr_img, dsize=(hr_size1[1] // 4, hr_size1[0] // 4))
+    
+    #valid_lr_img = tlx.vision.load_images(path=config.VALID.lr_img_path)[0]
+    valid_lr_img = image
+    
     valid_lr_img_tensor = (valid_lr_img / 127.5) - 1  # rescale to ［－1, 1]
-
 
     valid_lr_img_tensor = np.asarray(valid_lr_img_tensor, dtype=np.float32)
     valid_lr_img_tensor = valid_lr_img_tensor[np.newaxis, :, :, :]
@@ -182,29 +78,202 @@ def evaluate():
 
     out = tlx.ops.convert_to_numpy(G(valid_lr_img_tensor))
     out = np.asarray((out + 1) * 127.5, dtype=np.uint8)
-    print("LR size: %s /  generated HR size: %s" % (size, out.shape))  # LR size: (339, 510, 3) /  gen HR size: (1, 1356, 2040, 3)
-    print("[*] save images")
-    tlx.vision.save_image(out[0], file_name='valid_gen.png', path=save_dir)
-    tlx.vision.save_image(valid_lr_img, file_name='valid_lr.png', path=save_dir)
-    tlx.vision.save_image(valid_hr_img, file_name='valid_hr.png', path=save_dir)
-    out_bicu = cv2.resize(valid_lr_img, dsize = [size[1] * 4, size[0] * 4], interpolation = cv2.INTER_CUBIC)
-    tlx.vision.save_image(out_bicu, file_name='valid_hr_cubic.png', path=save_dir)
+    #print("LR size: %s /  generated HR size: %s" % (size, out.shape))
+    #print("[*] save images")
+    if (saveImage):
+        #tlx.vision.save_image(out[0], file_name='upscaled.png', path=save_dir)
+        cv2.imwrite(save_dir + '/upscaled.png', out[0])
+    return out[0]
+
+
+def face_detection(image, idx, saveImage=False):
+    # For static images:
+    with mp_face_detection.FaceDetection(
+        model_selection=1, min_detection_confidence=0.5) as face_detection:
+        
+        # Convert the BGR image to RGB and process it with MediaPipe Face Detection.
+        results = face_detection.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+
+        # Draw face detections of each face.
+        if not results.detections:
+            return image
+        for detection in results.detections:
+            #mp_drawing.draw_detection(image, detection)
+            
+            h, w, c = image.shape
+            ymin = detection.location_data.relative_bounding_box.ymin
+            xmin = detection.location_data.relative_bounding_box.xmin
+            height = detection.location_data.relative_bounding_box.height
+            width = detection.location_data.relative_bounding_box.width
+            
+            cropped_image = image[
+                int(ymin * h):int(ymin * h) + int(height * h),
+                int(xmin * w):int(xmin * w) + int(width * w)
+            ]
+
+            """print('Nose tip:')
+            print(mp_face_detection.get_key_point(
+            detection, mp_face_detection.FaceKeyPoint.NOSE_TIP))"""
+        if(saveImage):
+            cv2.imwrite('faces/cropped_image' + str(idx) + '.png', cropped_image)
+        return cropped_image
+
+def face_mash(image, fileName, idx, saveImage=False, saveLandmarks=True, detectEmotion=False, predictedEmitionFile=False):
+    # For static images:
+    drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
+    with mp_face_mesh.FaceMesh(
+        static_image_mode=True,
+        max_num_faces=1,
+        refine_landmarks=True,
+        min_detection_confidence=0.5) as face_mesh:
+
+        # Convert the BGR image to RGB before processing.
+        results = face_mesh.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+
+        # Print and draw face mesh landmarks on the image.
+        if not results.multi_face_landmarks:
+            return image
+        
+        #Get the important 27 landmark coordinates
+        important_27_landmarks = []
+        for face_landmarks in results.multi_face_landmarks:
+            for i in range(27):
+                important_27_landmarks.append(face_landmarks.landmark[landmark_ids[i]])
+        
+        landmark = []
+        if(detectEmotion):
+            #Get 27 landmark coordinates
+            for face_landmarks in important_27_landmarks:
+                landmark.append(face_landmarks.x)
+                landmark.append(face_landmarks.y)
+                landmark.append(face_landmarks.z)
+            #Predict emotion based on 27 landmarks
+            predictedEmotionWriter = csv.writer(predictedEmitionFile)
+            predictedEmotionWriter.writerow([ KNN.predict([landmark])[0] ])
+            #print(emotions[KNN.predict([landmark])[0]])
+        
+        if(saveLandmarks):
+            writer = csv.writer(landmarksFile)
+            
+            #print('face_landmarks:', face_landmarks)
+            writer.writerow(["["])
+            for face_landmarks in important_27_landmarks:
+                writer.writerow([
+                    str(face_landmarks.x) + ", " +
+                    str(face_landmarks.y) + ", " +
+                    str(face_landmarks.z) + ","
+                ])
+            writer.writerow(["],"])
+          
+        if(saveImage):
+            #save images with 27 landmarks
+            for face_landmarks in important_27_landmarks:
+                shape = image.shape 
+                relative_x = int(face_landmarks.x * shape[1])
+                relative_y = int(face_landmarks.y * shape[0])
+                cv2.circle(image, (relative_x, relative_y), radius=1, color=(225, 0, 100), thickness=1)
+            cv2.imwrite('face_mashes/img_with_27_landmarks' + str(idx) + '.png', image)
+        
+            #save images with face mesh
+            for face_landmarks in results.multi_face_landmarks:
+                mp_drawing.draw_landmarks(
+                  image=image,
+                  landmark_list=face_landmarks,
+                  connections=mp_face_mesh.FACEMESH_TESSELATION,
+                  landmark_drawing_spec=None,
+                  connection_drawing_spec=mp_drawing_styles
+                  .get_default_face_mesh_tesselation_style())
+                mp_drawing.draw_landmarks(
+                  image=image,
+                  landmark_list=face_landmarks,
+                  connections=mp_face_mesh.FACEMESH_CONTOURS,
+                  landmark_drawing_spec=None,
+                  connection_drawing_spec=mp_drawing_styles
+                  .get_default_face_mesh_contours_style())
+                mp_drawing.draw_landmarks(
+                  image=image,
+                  landmark_list=face_landmarks,
+                  connections=mp_face_mesh.FACEMESH_IRISES,
+                  landmark_drawing_spec=None,
+                  connection_drawing_spec=mp_drawing_styles
+                  .get_default_face_mesh_iris_connections_style())
+
+            cv2.imwrite('face_mashes/img_with_face_mash' + str(idx) + '.png', image)
+        
+        if(saveLandmarks):
+            writer.writerow([])
 
 
 if __name__ == '__main__':
-    import argparse
+    saveImage = True
+    upscale = True
+    saveLandmarks = False
+    trainKNN = False
+    detectEmotion = False
+    customImage = True
+    customImageFilePath = "input/S053_003_00000038.png"
+    
+    if(trainKNN):
+        KNN.train()
+        exit()
+    
+    predictedEmitionFile = False
+    if(detectEmotion):
+        if(upscale == False):
+            predictedEmotionFilePath = predictedEmotionFilePathWithoutSR
+        if(customImage):
+            predictedEmotionFilePath = predictedEmotionFilePathCustom
+        open(predictedEmotionFilePath, 'w').close()
+        predictedEmitionFile = open(predictedEmotionFilePath, 'a')
+    
+    if(saveLandmarks):
+        if(upscale == False):
+            landmarkFilePath = landmarkFilePathWithoutSR
+        open(landmarkFilePath, 'w').close()
+        landmarksFile = open(landmarkFilePath, 'a')
+        writer = csv.writer(landmarksFile)
+    
+    #Process a custom image
+    if(customImage):
+        print(customImageFilePath)
+        
+        image = cv2.imread(customImageFilePath)
+        image = face_detection(image, 0, saveImage)
+        if(upscale):
+            image = sr_upscale(image, saveImage)
+        face_mash(image, customImageFilePath, 0, saveImage, saveLandmarks, detectEmotion, predictedEmitionFile)
+    
+    #Process a dataset
+    if(customImage == False):
+        emotion_idx = 0
+        sum = 0
+        for idx, file in enumerate(fileNames):
+            #Only deal with those folders that has emotion labels
+            imageFolderName = fileNames[idx].split(img_base_path + 'cohn-kanade-images/')[1].split("/")
+            emotionFolderName = emotionNames[emotion_idx].split(img_base_path + 'Emotion/')[1].split("/")
+            
+            if(imageFolderName[0] != emotionFolderName[0] or imageFolderName[1] != emotionFolderName[1]):
+                continue
+            sum = sum + 1
+            
+            print(file)
+            
+            image = cv2.imread(file)
+            image = face_detection(image, idx, saveImage)
+            if(upscale):
+                image = sr_upscale(image, saveImage)
+            face_mash(image, file, idx, saveImage, saveLandmarks, detectEmotion, predictedEmitionFile)
+            
+            #Increase emotion index if we are at the last image inside the folder
+            imageFileNumber = int(fileNames[idx].split(img_base_path + 'cohn-kanade-images/')[1].split("/")[2].split("_")[2].split(".")[0])
+            emotionFileNumber = int(emotionNames[emotion_idx].split(img_base_path + 'Emotion/')[1].split("/")[2].split("_")[2])
+            if(imageFileNumber == emotionFileNumber):
+                emotion_idx += 1
+    
+    if(saveLandmarks):
+        landmarksFile.close()
+    if(detectEmotion):
+        predictedEmitionFile.close()
 
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--mode', type=str, default='train', help='train, eval')
-
-    args = parser.parse_args()
-
-    tlx.global_flag['mode'] = args.mode
-
-    if tlx.global_flag['mode'] == 'train':
-        train()
-    elif tlx.global_flag['mode'] == 'eval':
-        evaluate()
-    else:
-        raise Exception("Unknow --mode")
+    print(sum)
+    print("Done")
