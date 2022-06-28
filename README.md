@@ -3,15 +3,15 @@ Emotion detection by using MediaPipe Face Mesh indexes and KNN classifier for id
 (anger, discust, fear, happy, sad, supprise + contempt)
 
 Detailed project description can be found:
-[HERE](https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/topic_presentation.pdf)
+[HERE](https://github.com/Kerachi/SuperResolution-EmotionDetection/blob/master/presentations/topic_presentation.pdf)
 
-<a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/showcase.png">
+<a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/blob/master/presentations/showcase.png">
 <div align="center">
     <img src="presentations/showcase.png" width="80%" height="50%"/>
 </div>
 </a>
 
-<a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/presentations/showcase2.png">
+<a href="https://github.com/Kerachi/SuperResolution-EmotionDetection/blob/master/presentations/showcase2.png">
 <div align="center">
     <img src="presentations/showcase2.png" width="80%" height="50%"/>
 </div>
@@ -37,7 +37,8 @@ Detailed project description can be found:
         To save 27 important landmarks into a file (for each image)
     trainKNN = False
         To train the KNN classifier
-            should be set to True only after we have saved all landmark (dataset_results/landmarks.txt by default)
+            should be set to True only after we have saved all landmark
+                (dataset_results/landmarks.txt by default)
     detectEmotion = False
         To save detected emotions into a file (dataset_results/predictedEmotions.txt by default)
             should be set to True only after we have trained the KNN classifier with the landmarks
@@ -59,23 +60,23 @@ Detailed project description can be found:
             To convert a video to series of images
                 change/configure this file according to your needs
     
-    Your directory structure should look like this:
-    ```
-    srgan/
-        └── config.py
-        └── srgan.py
-        └── train.py
-        └── vgg.py
-        └── dataset_results
-              └── knn.sav
-              ├── landmarks.txt
-              ├── predictedEmotions.txt
-              └── DIV2K_valid_LR_bicubic
-        └── face_mashes
-        └── faces
-        └── upscaled 
-        └── datasets
-    ```
+Your directory structure should look like this:
+```
+srgan/
+    └── config.py
+    └── srgan.py
+    └── train.py
+    └── vgg.py
+    └── dataset_results
+          └── knn.sav
+          ├── landmarks.txt
+          ├── predictedEmotions.txt
+          └── DIV2K_valid_LR_bicubic
+    └── face_mashes
+    └── faces
+    └── upscaled 
+    └── datasets
+```
 
 #### Requirements
     Software requirements
