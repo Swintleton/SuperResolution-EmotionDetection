@@ -78,7 +78,6 @@ emotion_detection_with_sr/
           └── knn.sav
           ├── landmarks.txt
           ├── predictedEmotions.txt
-          └── DIV2K_valid_LR_bicubic
     └── face_mashes
     └── faces
     └── upscaled 
